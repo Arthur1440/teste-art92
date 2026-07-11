@@ -3,37 +3,51 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
-  <meta name="theme-color" content="#040713">
+  <meta name="theme-color" content="#030611">
   <title>Space Attacker</title>
-  <link rel="stylesheet" href="styles.css?v=4">
+  <style>
+    *{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#030611;color:#fff;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}button{font:inherit}.game{position:relative;width:100%;height:100%;min-height:100svh;overflow:hidden;background:#030611}canvas{position:absolute;inset:0;width:100%;height:100%;touch-action:none}.hud{position:absolute;z-index:5;top:0;left:0;right:0;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;padding:calc(env(safe-area-inset-top) + 12px) 16px 8px;pointer-events:none}.hud div:last-child{text-align:right}.hud small{display:block;font-size:10px;letter-spacing:.18em;opacity:.65}.hud strong{font-size:28px}.title{font-size:12px;letter-spacing:.16em;font-weight:900}.panel{position:absolute;z-index:8;left:50%;top:50%;transform:translate(-50%,-50%);width:min(88vw,390px);padding:28px 24px;border-radius:26px;border:1px solid rgba(255,255,255,.14);background:rgba(5,9,22,.86);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);text-align:center;box-shadow:0 24px 80px rgba(0,0,0,.5)}.hidden{display:none}.eyebrow{display:block;margin-bottom:10px;color:#67dcff;font-size:11px;font-weight:900;letter-spacing:.18em}.panel h1,.panel h2{margin:0 0 12px;font-size:clamp(34px,10vw,48px);line-height:.98}.panel p{margin:0 0 20px;color:rgba(255,255,255,.74);line-height:1.5}.panel button{width:100%;border:0;border-radius:16px;padding:15px 18px;background:#67dcff;color:#04101a;font-size:17px;font-weight:900;box-shadow:0 10px 30px rgba(103,220,255,.25)}.panel button:active{transform:scale(.98)}.panel button:disabled{opacity:.5}.status{margin-top:12px!important;margin-bottom:0!important;font-size:12px;color:rgba(255,255,255,.62)!important}.message{position:absolute;z-index:5;left:50%;bottom:calc(env(safe-area-inset-bottom) + 16px);transform:translateX(-50%);max-width:88vw;padding:9px 13px;border-radius:999px;background:rgba(0,0,0,.38);backdrop-filter:blur(8px);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.fallback{position:absolute;z-index:6;left:14px;right:14px;bottom:calc(env(safe-area-inset-bottom) + 58px);display:none;grid-template-columns:1fr 1fr 1fr;gap:10px}.fallback button{border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.1);color:#fff;border-radius:14px;padding:12px;font-weight:800}.fallback.show{display:grid}@media (orientation:landscape){.panel{width:min(72vw,460px);padding:20px}.panel h1,.panel h2{font-size:34px}}
+  </style>
 </head>
 <body>
-  <main class="game-shell">
+  <main class="game">
     <canvas id="game"></canvas>
-
-    <header class="hud">
-      <div><small>PONTOS</small><strong id="score">0</strong></div>
-      <div class="title">SPACE ATTACKER</div>
-      <div><small>VIDAS</small><strong id="lives">3</strong></div>
-    </header>
-
-    <section id="intro" class="panel">
-      <span class="eyebrow">JOGO COM SENSORES</span>
-      <h1>Defenda o planeta.</h1>
-      <p>Incline o iPhone para pilotar a nave. Os disparos são automáticos. Destrua as ondas inimigas e desvie dos tiros.</p>
-      <button id="startButton">Ativar sensores e jogar</button>
-      <p id="status" class="status">Use o Safari e mantenha o aparelho na vertical.</p>
-    </section>
-
-    <section id="gameOver" class="panel hidden">
-      <span class="eyebrow" id="endLabel">FIM DE JOGO</span>
-      <h2 id="endTitle">0 pontos</h2>
-      <p id="endText"></p>
-      <button id="restartButton">Jogar novamente</button>
-    </section>
-
-    <div id="message" class="message">Incline o iPhone para mover a nave</div>
+    <header class="hud"><div><small>PONTOS</small><strong id="score">0</strong></div><div class="title">SPACE ATTACKER</div><div><small>VIDAS</small><strong id="lives">3</strong></div></header>
+    <section id="intro" class="panel"><span class="eyebrow">JOGO COM SENSORES</span><h1>Defenda o planeta.</h1><p>Incline o iPhone para mover a nave. Os tiros são automáticos. Destrua os invasores e desvie dos disparos.</p><button id="startButton">Ativar sensores e jogar</button><p id="status" class="status">Abra diretamente no Safari.</p></section>
+    <section id="gameOver" class="panel hidden"><span class="eyebrow">NAVE DESTRUÍDA</span><h2 id="endTitle">0 pontos</h2><p id="endText">A invasão venceu esta rodada.</p><button id="restartButton">Jogar novamente</button></section>
+    <div id="message" class="message">Incline o iPhone para pilotar</div>
+    <div id="fallback" class="fallback"><button id="leftButton">◀</button><button id="centerButton">▲</button><button id="rightButton">▶</button></div>
   </main>
-  <script src="script.js?v=4"></script>
+  <script>
+  (function(){'use strict';
+    function $(id){return document.getElementById(id)}
+    var canvas=$('game'),ctx=canvas.getContext('2d'),intro=$('intro'),gameOver=$('gameOver'),startButton=$('startButton'),restartButton=$('restartButton'),statusText=$('status'),scoreText=$('score'),livesText=$('lives'),endTitle=$('endTitle'),endText=$('endText'),message=$('message'),fallback=$('fallback');
+    var width=0,height=0,dpr=1,running=false,score=0,lives=3,level=1,lastTime=0,frameId=0,fireTimer=0,spawnTimer=0,enemyFireTimer=0,sensorSeen=false,sensorBound=false,baseBeta=null,baseGamma=null,inputX=0,inputY=0;
+    var ship={x:0,y:0,vx:0,vy:0,r:17,inv:0},stars=[],bullets=[],enemyBullets=[],enemies=[],particles=[];
+    function resize(){width=innerWidth;height=innerHeight;dpr=Math.min(devicePixelRatio||1,2);canvas.width=Math.round(width*dpr);canvas.height=Math.round(height*dpr);canvas.style.width=width+'px';canvas.style.height=height+'px';ctx.setTransform(dpr,0,0,dpr,0,0);if(!running){ship.x=width/2;ship.y=height*.8}makeStars();draw()}
+    function makeStars(){stars=[];var c=Math.max(55,Math.floor(width*height/8500));for(var i=0;i<c;i++)stars.push({x:Math.random()*width,y:Math.random()*height,s:Math.random()*1.7+.4,v:18+Math.random()*55,a:.25+Math.random()*.7})}
+    function permissionPromise(Type){if(!Type||typeof Type.requestPermission!=='function')return Promise.resolve('granted');try{return Type.requestPermission()}catch(err){return Promise.reject(err)}}
+    function onOrientation(e){sensorSeen=true;if(!running)return;if(baseBeta===null&&typeof e.beta==='number')baseBeta=e.beta;if(baseGamma===null&&typeof e.gamma==='number')baseGamma=e.gamma;var beta=typeof e.beta==='number'?e.beta-baseBeta:0,gamma=typeof e.gamma==='number'?e.gamma-baseGamma:0;inputX=Math.max(-1,Math.min(1,gamma/22));inputY=Math.max(-1,Math.min(1,beta/26))}
+    function reset(){cancelAnimationFrame(frameId);score=0;lives=3;level=1;fireTimer=0;spawnTimer=.3;enemyFireTimer=1;bullets=[];enemyBullets=[];enemies=[];particles=[];inputX=0;inputY=0;baseBeta=null;baseGamma=null;ship.x=width/2;ship.y=height*.8;ship.vx=0;ship.vy=0;ship.inv=0;scoreText.textContent='0';livesText.textContent='3';intro.classList.add('hidden');gameOver.classList.add('hidden');message.textContent='Incline o iPhone para pilotar';running=true;lastTime=performance.now();frameId=requestAnimationFrame(loop);setTimeout(function(){if(running&&!sensorSeen)fallback.classList.add('show')},1500)}
+    function spawnEnemy(){var heavy=Math.random()<Math.min(.12+level*.02,.35);enemies.push({x:30+Math.random()*Math.max(20,width-60),y:-35,vx:(Math.random()-.5)*(35+level*5),vy:55+level*8+Math.random()*25,r:heavy?23:15+Math.random()*6,hp:heavy?3:1,heavy:heavy,phase:Math.random()*Math.PI*2,dead:false})}
+    function shoot(){bullets.push({x:ship.x-7,y:ship.y-24,vy:-650,r:3,dead:false});bullets.push({x:ship.x+7,y:ship.y-24,vy:-650,r:3,dead:false})}
+    function enemyShoot(e){var dx=ship.x-e.x,dy=ship.y-e.y,len=Math.hypot(dx,dy)||1,speed=165+level*12;enemyBullets.push({x:e.x,y:e.y+e.r,vx:dx/len*speed,vy:dy/len*speed,r:e.heavy?6:4,dead:false})}
+    function explode(x,y,color,n){for(var i=0;i<n;i++){var a=Math.random()*Math.PI*2,s=45+Math.random()*190;particles.push({x:x,y:y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,life:.35+Math.random()*.55,max:.9,size:1+Math.random()*3,color:color})}}
+    function hit(a,b,ra,rb){return Math.hypot(a.x-b.x,a.y-b.y)<ra+rb}
+    function damageShip(){if(ship.inv>0)return;lives--;livesText.textContent=String(lives);ship.inv=1.5;explode(ship.x,ship.y,'#67dcff',24);if(navigator.vibrate)navigator.vibrate([30,30,60]);if(lives<=0)finish()}
+    function update(dt){level=1+Math.floor(score/250);ship.inv=Math.max(0,ship.inv-dt);ship.vx+=inputX*900*dt;ship.vy+=inputY*700*dt;ship.vx*=Math.pow(.001,dt);ship.vy*=Math.pow(.0015,dt);ship.x+=ship.vx*dt;ship.y+=ship.vy*dt;ship.x=Math.max(24,Math.min(width-24,ship.x));ship.y=Math.max(90,Math.min(height-40,ship.y));fireTimer-=dt;if(fireTimer<=0){shoot();fireTimer=Math.max(.13,.24-level*.008)}spawnTimer-=dt;if(spawnTimer<=0){spawnEnemy();spawnTimer=Math.max(.38,.95-level*.05)}enemyFireTimer-=dt;if(enemyFireTimer<=0&&enemies.length){var shooters=enemies.filter(function(e){return !e.dead&&e.y>30&&e.y<height*.62});if(shooters.length)enemyShoot(shooters[Math.floor(Math.random()*shooters.length)]);enemyFireTimer=Math.max(.5,1.25-level*.06)}stars.forEach(function(s){s.y+=s.v*dt;if(s.y>height+4){s.y=-4;s.x=Math.random()*width}});bullets.forEach(function(b){b.y+=b.vy*dt});enemyBullets.forEach(function(b){b.x+=b.vx*dt;b.y+=b.vy*dt});enemies.forEach(function(e){e.phase+=dt*2;e.x+=(e.vx+Math.sin(e.phase)*24)*dt;e.y+=e.vy*dt;if(e.x<e.r||e.x>width-e.r)e.vx*=-1;if(e.y>height+40){e.dead=true;damageShip()}if(!e.dead&&hit(e,ship,e.r,16)){e.dead=true;explode(e.x,e.y,'#ff5f87',18);damageShip()}});bullets.forEach(function(b){if(b.dead)return;for(var i=0;i<enemies.length;i++){var e=enemies[i];if(e.dead)continue;if(hit(b,e,b.r,e.r)){b.dead=true;e.hp--;explode(b.x,b.y,'#ffe56a',5);if(e.hp<=0){e.dead=true;score+=e.heavy?40:10;scoreText.textContent=String(score);explode(e.x,e.y,e.heavy?'#a87cff':'#ff5f87',e.heavy?28:16);if(navigator.vibrate)navigator.vibrate(15)}break}}});enemyBullets.forEach(function(b){if(!b.dead&&hit(b,ship,b.r,15)){b.dead=true;damageShip()}});particles.forEach(function(p){p.x+=p.vx*dt;p.y+=p.vy*dt;p.vx*=Math.pow(.06,dt);p.vy*=Math.pow(.06,dt);p.life-=dt});bullets=bullets.filter(function(b){return !b.dead&&b.y>-30});enemyBullets=enemyBullets.filter(function(b){return !b.dead&&b.y<height+30&&b.x>-30&&b.x<width+30});enemies=enemies.filter(function(e){return !e.dead});particles=particles.filter(function(p){return p.life>0})}
+    function drawBackground(){var g=ctx.createLinearGradient(0,0,0,height);g.addColorStop(0,'#061126');g.addColorStop(.6,'#090d20');g.addColorStop(1,'#02040a');ctx.fillStyle=g;ctx.fillRect(0,0,width,height);stars.forEach(function(s){ctx.globalAlpha=s.a;ctx.fillStyle='#fff';ctx.fillRect(s.x,s.y,s.s,s.s*2.2)});ctx.globalAlpha=1;var py=height+100,pg=ctx.createRadialGradient(width/2,py-70,20,width/2,py,width*.75);pg.addColorStop(0,'#29b8e8');pg.addColorStop(.55,'#0c4d79');pg.addColorStop(1,'#03101d');ctx.fillStyle=pg;ctx.beginPath();ctx.arc(width/2,py,width*.75,Math.PI,Math.PI*2);ctx.fill()}
+    function drawShip(){if(ship.inv>0&&Math.floor(ship.inv*12)%2===0)return;ctx.save();ctx.translate(ship.x,ship.y);ctx.rotate(inputX*.16);ctx.shadowColor='#67dcff';ctx.shadowBlur=20;ctx.fillStyle='#e7fbff';ctx.beginPath();ctx.moveTo(0,-24);ctx.lineTo(18,20);ctx.lineTo(6,14);ctx.lineTo(0,21);ctx.lineTo(-6,14);ctx.lineTo(-18,20);ctx.closePath();ctx.fill();ctx.fillStyle='#5cd6ff';ctx.beginPath();ctx.moveTo(0,-11);ctx.lineTo(7,9);ctx.lineTo(-7,9);ctx.closePath();ctx.fill();ctx.fillStyle='#ff9b3f';ctx.beginPath();ctx.moveTo(-6,20);ctx.lineTo(0,34+Math.random()*7);ctx.lineTo(6,20);ctx.fill();ctx.restore()}
+    function drawEnemies(){enemies.forEach(function(e){ctx.save();ctx.translate(e.x,e.y);ctx.rotate(Math.sin(e.phase)*.12);ctx.shadowColor=e.heavy?'#a87cff':'#ff5f87';ctx.shadowBlur=e.heavy?22:14;ctx.fillStyle=e.heavy?'#8b5cff':'#ef3d70';ctx.beginPath();ctx.moveTo(0,e.r);ctx.lineTo(e.r,-e.r*.7);ctx.lineTo(e.r*.32,-e.r*.45);ctx.lineTo(0,-e.r);ctx.lineTo(-e.r*.32,-e.r*.45);ctx.lineTo(-e.r,-e.r*.7);ctx.closePath();ctx.fill();ctx.fillStyle='#ffdce7';ctx.fillRect(-e.r*.36,-3,e.r*.72,5);ctx.restore()})}
+    function drawProjectiles(){ctx.shadowBlur=12;ctx.shadowColor='#ffe56a';ctx.fillStyle='#fff6a0';bullets.forEach(function(b){ctx.fillRect(b.x-2,b.y-8,4,16)});ctx.shadowColor='#ff4f79';ctx.fillStyle='#ff668c';enemyBullets.forEach(function(b){ctx.beginPath();ctx.arc(b.x,b.y,b.r,0,Math.PI*2);ctx.fill()});ctx.shadowBlur=0}
+    function drawParticles(){particles.forEach(function(p){ctx.globalAlpha=Math.max(0,p.life/p.max);ctx.fillStyle=p.color;ctx.fillRect(p.x,p.y,p.size,p.size)});ctx.globalAlpha=1}
+    function draw(){drawBackground();drawProjectiles();drawEnemies();drawShip();drawParticles()}
+    function loop(now){if(!running)return;var dt=Math.min((now-lastTime)/1000,.033);lastTime=now;update(dt);draw();frameId=requestAnimationFrame(loop)}
+    function finish(){if(!running)return;running=false;cancelAnimationFrame(frameId);fallback.classList.remove('show');endTitle.textContent=score+' pontos';endText.textContent=score>=500?'Defesa impecável. Os alienígenas pediram transferência.':score>=200?'Boa resistência. O planeta ainda está em uma peça.':'A invasão venceu esta rodada. O iPhone, ao menos, sobreviveu.';gameOver.classList.remove('hidden');message.textContent='Nível alcançado: '+level}
+    function prepare(){startButton.disabled=true;statusText.textContent='Solicitando acesso aos sensores...';var p1=permissionPromise(window.DeviceOrientationEvent),p2=permissionPromise(window.DeviceMotionEvent);Promise.all([p1,p2]).then(function(v){if(v[0]!=='granted'||v[1]!=='granted')throw new Error('Permissões: '+v[0]+'/'+v[1]);if(!sensorBound){window.addEventListener('deviceorientation',onOrientation,true);sensorBound=true}reset()}).catch(function(err){statusText.textContent='Não foi possível iniciar: '+(err&&err.message?err.message:err);startButton.disabled=false;fallback.classList.add('show')})}
+    function bindHold(id,x,y){var el=$(id);function down(e){e.preventDefault();inputX=x;inputY=y}function up(e){e.preventDefault();inputX=0;inputY=0}el.addEventListener('touchstart',down,{passive:false});el.addEventListener('touchend',up,{passive:false});el.addEventListener('mousedown',down);el.addEventListener('mouseup',up);el.addEventListener('mouseleave',up)}
+    startButton.addEventListener('click',prepare);restartButton.addEventListener('click',reset);bindHold('leftButton',-1,0);bindHold('rightButton',1,0);bindHold('centerButton',0,-1);window.addEventListener('resize',resize);window.addEventListener('orientationchange',function(){setTimeout(resize,250)});window.addEventListener('error',function(e){statusText.textContent='Erro: '+e.message;startButton.disabled=false});resize();
+  })();
+  </script>
 </body>
 </html>
