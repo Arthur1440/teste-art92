@@ -30,9 +30,9 @@ function checkEnvironment() {
   $('environmentNotice').classList.toggle('warning', !secure || framed);
 }
 
-async function requestPermission(EventType) {
+function permissionPromise(EventType) {
   if (!EventType || typeof EventType.requestPermission !== 'function') {
-    return 'granted';
+    return Promise.resolve('granted');
   }
   return EventType.requestPermission();
 }
@@ -70,7 +70,7 @@ function startListeners() {
   }, true);
 }
 
-startButton.addEventListener('click', async () => {
+startButton.addEventListener('click', () => {
   startButton.disabled = true;
   setStatus('Solicitando permissão...');
 
@@ -87,20 +87,27 @@ startButton.addEventListener('click', async () => {
   }
 
   try {
-    const orientationPermission = await requestPermission(window.DeviceOrientationEvent);
-    const motionPermission = await requestPermission(window.DeviceMotionEvent);
+    const orientationRequest = permissionPromise(window.DeviceOrientationEvent);
+    const motionRequest = permissionPromise(window.DeviceMotionEvent);
 
-    if (orientationPermission !== 'granted' || motionPermission !== 'granted') {
-      setStatus('Permissão negada. Revise a permissão do site no Safari e tente novamente.', 'error');
-      startButton.disabled = false;
-      return;
-    }
+    Promise.all([orientationRequest, motionRequest])
+      .then(([orientationPermission, motionPermission]) => {
+        if (orientationPermission !== 'granted' || motionPermission !== 'granted') {
+          setStatus(`Permissões: orientação=${orientationPermission}, movimento=${motionPermission}.`, 'error');
+          startButton.disabled = false;
+          return;
+        }
 
-    startListeners();
-    setStatus('Sensores ativos. Movimente o iPhone.', 'success');
-    startButton.textContent = 'Sensores ativados';
+        startListeners();
+        setStatus('Sensores ativos. Movimente o iPhone.', 'success');
+        startButton.textContent = 'Sensores ativados';
+      })
+      .catch((error) => {
+        setStatus(`Falha ao solicitar permissão: ${error.message || error}`, 'error');
+        startButton.disabled = false;
+      });
   } catch (error) {
-    setStatus(`Não foi possível ativar: ${error.message || error}`, 'error');
+    setStatus(`Erro imediato: ${error.message || error}`, 'error');
     startButton.disabled = false;
   }
 });
