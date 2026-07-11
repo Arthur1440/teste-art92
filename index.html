@@ -14,28 +14,33 @@
 
     <header class="hud">
       <div><small>PONTOS</small><strong id="score">0</strong></div>
-      <div class="title">CAÇA-LUZES</div>
+      <div class="title">CAÇA-LUZES IA</div>
       <div><small>TEMPO</small><strong id="time">30</strong></div>
     </header>
 
     <section id="intro" class="panel">
-      <span class="eyebrow">MINIJOGO AR</span>
-      <h1>Incline. Mire. Capture.</h1>
-      <p>Use a câmera como cenário e incline o iPhone para levar a mira até as luzes.</p>
-      <button id="startButton">Iniciar jogo</button>
-      <p id="status" class="status">Abra diretamente no Safari.</p>
+      <span class="eyebrow">CÂMERA + IA + SENSORES</span>
+      <h1>Encontre o ambiente.</h1>
+      <p>A IA procura objetos, chão e parede. As luzes aparecem sobre o que ela reconhecer e você mira inclinando o iPhone.</p>
+      <button id="startButton">Carregar IA e iniciar</button>
+      <p id="status" class="status">Abra diretamente no Safari. O primeiro carregamento pode demorar.</p>
     </section>
 
     <section id="gameOver" class="panel hidden">
       <span class="eyebrow">FIM DE JOGO</span>
       <h2><span id="finalScore">0</span> pontos</h2>
-      <p id="resultText">Nada mal para um humano girando um retângulo de vidro.</p>
+      <p id="resultText"></p>
       <button id="restartButton">Jogar novamente</button>
     </section>
 
+    <div id="detected" class="detected">IA aguardando</div>
     <div class="crosshair" id="crosshair" aria-hidden="true"><i></i></div>
-    <div class="hint" id="hint">Incline o aparelho para mover a mira</div>
+    <div class="hint" id="hint">Aponte para um cômodo bem iluminado</div>
   </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/deeplab@0.2.2/dist/deeplab.min.js"></script>
   <script src="script.js"></script>
 </body>
 </html>
