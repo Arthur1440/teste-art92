@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
-  <meta name="theme-color" content="#10151d">
-  <title>Gravity Drop</title>
+  <meta name="theme-color" content="#040713">
+  <title>Space Attacker</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -12,27 +12,27 @@
     <canvas id="game"></canvas>
 
     <header class="hud">
-      <div><small>BOLAS</small><strong id="remaining">12</strong></div>
-      <div class="title">GRAVITY DROP</div>
-      <div><small>TEMPO</small><strong id="time">60</strong></div>
+      <div><small>PONTOS</small><strong id="score">0</strong></div>
+      <div class="title">SPACE ATTACKER</div>
+      <div><small>VIDAS</small><strong id="lives">3</strong></div>
     </header>
 
     <section id="intro" class="panel">
       <span class="eyebrow">JOGO COM SENSORES</span>
-      <h1>Leve todas ao buraco.</h1>
-      <p>Incline o iPhone para mover as bolas. A gravidade acompanha o aparelho e as colisões acontecem em tempo real.</p>
+      <h1>Defenda o planeta.</h1>
+      <p>Incline o iPhone para pilotar a nave. Os disparos são automáticos. Destrua as ondas inimigas e desvie dos tiros.</p>
       <button id="startButton">Ativar sensores e jogar</button>
       <p id="status" class="status">Use o Safari e mantenha o aparelho na vertical.</p>
     </section>
 
     <section id="gameOver" class="panel hidden">
       <span class="eyebrow" id="endLabel">FIM DE JOGO</span>
-      <h2 id="endTitle">Resultado</h2>
+      <h2 id="endTitle">0 pontos</h2>
       <p id="endText"></p>
       <button id="restartButton">Jogar novamente</button>
     </section>
 
-    <div id="message" class="message">Incline o iPhone para controlar a gravidade</div>
+    <div id="message" class="message">Incline o iPhone para mover a nave</div>
   </main>
   <script src="script.js"></script>
 </body>
