@@ -6,26 +6,34 @@ const gameOver = $('gameOver');
 const startButton = $('startButton');
 const restartButton = $('restartButton');
 const statusText = $('status');
-const remainingText = $('remaining');
-const timeText = $('time');
+const scoreText = $('score');
+const livesText = $('lives');
 const endLabel = $('endLabel');
 const endTitle = $('endTitle');
 const endText = $('endText');
 const message = $('message');
 
-const BALL_COUNT = 12;
-let balls = [];
-let hole = { x: 0, y: 0, radius: 42 };
-let gravity = { x: 0, y: 240 };
 let running = false;
-let remaining = BALL_COUNT;
-let timeLeft = 60;
+let score = 0;
+let lives = 3;
+let level = 1;
 let lastTime = 0;
 let animationId = 0;
-let timerId = 0;
 let baseBeta = null;
 let baseGamma = null;
 let orientationBound = false;
+let fireCooldown = 0;
+let enemySpawnTimer = 0;
+let enemyFireTimer = 0;
+let shake = 0;
+
+const ship = { x: 0, y: 0, vx: 0, vy: 0, w: 34, h: 46, invulnerable: 0 };
+const bullets = [];
+const enemyBullets = [];
+const enemies = [];
+const particles = [];
+const stars = [];
+let input = { x: 0, y: 0 };
 
 function resize() {
   const dpr = Math.min(devicePixelRatio || 1, 2);
@@ -34,9 +42,25 @@ function resize() {
   canvas.style.width = `${innerWidth}px`;
   canvas.style.height = `${innerHeight}px`;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  hole.x = innerWidth * 0.5;
-  hole.y = innerHeight * 0.57;
-  hole.radius = Math.max(34, Math.min(innerWidth, innerHeight) * 0.065);
+  if (!running) {
+    ship.x = innerWidth / 2;
+    ship.y = innerHeight * 0.78;
+  }
+  makeStars();
+}
+
+function makeStars() {
+  stars.length = 0;
+  const count = Math.max(55, Math.floor(innerWidth * innerHeight / 9000));
+  for (let i = 0; i < count; i += 1) {
+    stars.push({
+      x: Math.random() * innerWidth,
+      y: Math.random() * innerHeight,
+      size: Math.random() * 1.8 + 0.4,
+      speed: Math.random() * 45 + 18,
+      alpha: Math.random() * 0.7 + 0.25
+    });
+  }
 }
 
 function permissionPromise(EventType) {
@@ -48,168 +72,325 @@ function handleOrientation(event) {
   if (!running) return;
   if (baseBeta === null && Number.isFinite(event.beta)) baseBeta = event.beta;
   if (baseGamma === null && Number.isFinite(event.gamma)) baseGamma = event.gamma;
-
   const beta = Number.isFinite(event.beta) ? event.beta - baseBeta : 0;
   const gamma = Number.isFinite(event.gamma) ? event.gamma - baseGamma : 0;
-  gravity.x = Math.max(-650, Math.min(650, gamma * 24));
-  gravity.y = Math.max(-650, Math.min(650, beta * 24));
+  input.x = Math.max(-1, Math.min(1, gamma / 24));
+  input.y = Math.max(-1, Math.min(1, beta / 28));
 }
 
-function randomBall(index) {
-  const radius = 12 + Math.random() * 5;
-  let x;
-  let y;
-  do {
-    x = 35 + Math.random() * (innerWidth - 70);
-    y = 100 + Math.random() * (innerHeight - 180);
-  } while (Math.hypot(x - hole.x, y - hole.y) < hole.radius + 80);
+function spawnEnemy() {
+  const heavy = Math.random() < Math.min(0.12 + level * 0.02, 0.35);
+  const r = heavy ? 24 : 15 + Math.random() * 7;
+  enemies.push({
+    x: 28 + Math.random() * (innerWidth - 56),
+    y: -40,
+    vx: (Math.random() - 0.5) * (35 + level * 6),
+    vy: 55 + level * 9 + Math.random() * 28,
+    r,
+    hp: heavy ? 3 : 1,
+    maxHp: heavy ? 3 : 1,
+    phase: Math.random() * Math.PI * 2,
+    heavy
+  });
+}
 
-  return {
-    x,
-    y,
-    vx: 0,
-    vy: 0,
-    radius,
-    color: `hsl(${(index * 31 + 185) % 360} 82% 62%)`,
-    active: true,
-    shrink: 1
-  };
+function shoot() {
+  bullets.push({ x: ship.x - 8, y: ship.y - 25, vy: -720, r: 3 });
+  bullets.push({ x: ship.x + 8, y: ship.y - 25, vy: -720, r: 3 });
+}
+
+function enemyShoot(enemy) {
+  const dx = ship.x - enemy.x;
+  const dy = ship.y - enemy.y;
+  const length = Math.hypot(dx, dy) || 1;
+  const speed = 175 + level * 14;
+  enemyBullets.push({
+    x: enemy.x,
+    y: enemy.y + enemy.r,
+    vx: dx / length * speed,
+    vy: dy / length * speed,
+    r: enemy.heavy ? 6 : 4
+  });
+}
+
+function explode(x, y, color, amount = 14) {
+  for (let i = 0; i < amount; i += 1) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 50 + Math.random() * 220;
+    particles.push({
+      x, y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      life: 0.45 + Math.random() * 0.55,
+      maxLife: 1,
+      size: 1.5 + Math.random() * 3.5,
+      color
+    });
+  }
 }
 
 function resetGame() {
-  clearInterval(timerId);
   cancelAnimationFrame(animationId);
+  score = 0;
+  lives = 3;
+  level = 1;
+  fireCooldown = 0;
+  enemySpawnTimer = 0;
+  enemyFireTimer = 0;
+  shake = 0;
   baseBeta = null;
   baseGamma = null;
-  remaining = BALL_COUNT;
-  timeLeft = 60;
-  remainingText.textContent = String(remaining);
-  timeText.textContent = String(timeLeft);
-  balls = Array.from({ length: BALL_COUNT }, (_, index) => randomBall(index));
-  running = true;
-  lastTime = performance.now();
+  bullets.length = 0;
+  enemyBullets.length = 0;
+  enemies.length = 0;
+  particles.length = 0;
+  ship.x = innerWidth / 2;
+  ship.y = innerHeight * 0.8;
+  ship.vx = 0;
+  ship.vy = 0;
+  ship.invulnerable = 0;
+  scoreText.textContent = '0';
+  livesText.textContent = '3';
   intro.classList.add('hidden');
   gameOver.classList.add('hidden');
-  message.textContent = 'Incline o iPhone e conduza as bolas ao buraco';
-  timerId = setInterval(() => {
-    timeLeft -= 1;
-    timeText.textContent = String(Math.max(0, timeLeft));
-    if (timeLeft <= 0) finish(false);
-  }, 1000);
+  message.textContent = 'Incline para pilotar. Tiros automáticos.';
+  running = true;
+  lastTime = performance.now();
   animationId = requestAnimationFrame(loop);
 }
 
-function resolveBallCollision(a, b) {
-  if (!a.active || !b.active) return;
-  const dx = b.x - a.x;
-  const dy = b.y - a.y;
-  const distance = Math.hypot(dx, dy) || 0.001;
-  const minimum = a.radius + b.radius;
-  if (distance >= minimum) return;
+function hitShip() {
+  if (ship.invulnerable > 0) return;
+  lives -= 1;
+  livesText.textContent = String(lives);
+  ship.invulnerable = 1.8;
+  shake = 12;
+  explode(ship.x, ship.y, '#67dfff', 28);
+  if (navigator.vibrate) navigator.vibrate([40, 40, 80]);
+  if (lives <= 0) finish();
+}
 
-  const nx = dx / distance;
-  const ny = dy / distance;
-  const overlap = minimum - distance;
-  a.x -= nx * overlap * 0.5;
-  a.y -= ny * overlap * 0.5;
-  b.x += nx * overlap * 0.5;
-  b.y += ny * overlap * 0.5;
-
-  const relative = (b.vx - a.vx) * nx + (b.vy - a.vy) * ny;
-  if (relative > 0) return;
-  const impulse = -(1.72) * relative / 2;
-  a.vx -= impulse * nx;
-  a.vy -= impulse * ny;
-  b.vx += impulse * nx;
-  b.vy += impulse * ny;
+function circleHit(a, b, radiusA, radiusB) {
+  return Math.hypot(a.x - b.x, a.y - b.y) < radiusA + radiusB;
 }
 
 function update(dt) {
-  const damping = Math.pow(0.992, dt * 60);
-  for (const ball of balls) {
-    if (!ball.active) {
-      ball.shrink *= Math.pow(0.04, dt);
-      continue;
+  level = 1 + Math.floor(score / 250);
+  ship.invulnerable = Math.max(0, ship.invulnerable - dt);
+  ship.vx += input.x * 900 * dt;
+  ship.vy += input.y * 700 * dt;
+  ship.vx *= Math.pow(0.0008, dt);
+  ship.vy *= Math.pow(0.0015, dt);
+  ship.x += ship.vx * dt;
+  ship.y += ship.vy * dt;
+  ship.x = Math.max(24, Math.min(innerWidth - 24, ship.x));
+  ship.y = Math.max(100, Math.min(innerHeight - 42, ship.y));
+
+  fireCooldown -= dt;
+  if (fireCooldown <= 0) {
+    shoot();
+    fireCooldown = Math.max(0.12, 0.24 - level * 0.01);
+  }
+
+  enemySpawnTimer -= dt;
+  if (enemySpawnTimer <= 0) {
+    spawnEnemy();
+    enemySpawnTimer = Math.max(0.35, 0.95 - level * 0.06);
+  }
+
+  enemyFireTimer -= dt;
+  if (enemyFireTimer <= 0 && enemies.length) {
+    const shooters = enemies.filter((e) => e.y > 40 && e.y < innerHeight * 0.62);
+    if (shooters.length) enemyShoot(shooters[Math.floor(Math.random() * shooters.length)]);
+    enemyFireTimer = Math.max(0.45, 1.25 - level * 0.07);
+  }
+
+  for (const star of stars) {
+    star.y += star.speed * dt;
+    if (star.y > innerHeight + 4) { star.y = -4; star.x = Math.random() * innerWidth; }
+  }
+
+  for (const bullet of bullets) bullet.y += bullet.vy * dt;
+  for (const bullet of enemyBullets) { bullet.x += bullet.vx * dt; bullet.y += bullet.vy * dt; }
+
+  for (const enemy of enemies) {
+    enemy.phase += dt * 2.2;
+    enemy.x += (enemy.vx + Math.sin(enemy.phase) * 26) * dt;
+    enemy.y += enemy.vy * dt;
+    if (enemy.x < enemy.r || enemy.x > innerWidth - enemy.r) enemy.vx *= -1;
+    if (enemy.y > innerHeight + 50) {
+      enemy.dead = true;
+      hitShip();
     }
-
-    ball.vx = (ball.vx + gravity.x * dt) * damping;
-    ball.vy = (ball.vy + gravity.y * dt) * damping;
-    const speed = Math.hypot(ball.vx, ball.vy);
-    if (speed > 900) {
-      ball.vx *= 900 / speed;
-      ball.vy *= 900 / speed;
-    }
-    ball.x += ball.vx * dt;
-    ball.y += ball.vy * dt;
-
-    if (ball.x - ball.radius < 0) { ball.x = ball.radius; ball.vx *= -0.72; }
-    if (ball.x + ball.radius > innerWidth) { ball.x = innerWidth - ball.radius; ball.vx *= -0.72; }
-    if (ball.y - ball.radius < 72) { ball.y = 72 + ball.radius; ball.vy *= -0.72; }
-    if (ball.y + ball.radius > innerHeight) { ball.y = innerHeight - ball.radius; ball.vy *= -0.72; }
-
-    const distanceToHole = Math.hypot(ball.x - hole.x, ball.y - hole.y);
-    if (distanceToHole < hole.radius - ball.radius * 0.15) {
-      ball.active = false;
-      ball.vx = 0;
-      ball.vy = 0;
-      remaining -= 1;
-      remainingText.textContent = String(remaining);
-      if (navigator.vibrate) navigator.vibrate(25);
-      if (remaining === 0) finish(true);
+    if (!enemy.dead && circleHit(enemy, ship, enemy.r, 18)) {
+      enemy.dead = true;
+      explode(enemy.x, enemy.y, '#ff5f87', 18);
+      hitShip();
     }
   }
 
-  for (let i = 0; i < balls.length; i += 1) {
-    for (let j = i + 1; j < balls.length; j += 1) resolveBallCollision(balls[i], balls[j]);
+  for (const bullet of bullets) {
+    if (bullet.dead) continue;
+    for (const enemy of enemies) {
+      if (enemy.dead) continue;
+      if (circleHit(bullet, enemy, bullet.r, enemy.r)) {
+        bullet.dead = true;
+        enemy.hp -= 1;
+        explode(bullet.x, bullet.y, '#ffe96d', 5);
+        if (enemy.hp <= 0) {
+          enemy.dead = true;
+          score += enemy.heavy ? 40 : 10;
+          scoreText.textContent = String(score);
+          explode(enemy.x, enemy.y, enemy.heavy ? '#b47cff' : '#ff5f87', enemy.heavy ? 30 : 18);
+          if (navigator.vibrate) navigator.vibrate(18);
+        }
+        break;
+      }
+    }
   }
+
+  for (const bullet of enemyBullets) {
+    if (!bullet.dead && circleHit(bullet, ship, bullet.r, 16)) {
+      bullet.dead = true;
+      hitShip();
+    }
+  }
+
+  for (const p of particles) {
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    p.vx *= Math.pow(0.05, dt);
+    p.vy *= Math.pow(0.05, dt);
+    p.life -= dt;
+  }
+
+  removeDead(bullets, (b) => b.dead || b.y < -30);
+  removeDead(enemyBullets, (b) => b.dead || b.y > innerHeight + 30 || b.x < -30 || b.x > innerWidth + 30);
+  removeDead(enemies, (e) => e.dead);
+  removeDead(particles, (p) => p.life <= 0);
+  shake *= Math.pow(0.01, dt);
 }
 
-function drawBoard() {
-  ctx.clearRect(0, 0, innerWidth, innerHeight);
-  const grid = 28;
-  ctx.strokeStyle = 'rgba(255,255,255,.035)';
-  ctx.lineWidth = 1;
-  for (let x = 0; x < innerWidth; x += grid) {
-    ctx.beginPath(); ctx.moveTo(x, 70); ctx.lineTo(x, innerHeight); ctx.stroke();
-  }
-  for (let y = 70; y < innerHeight; y += grid) {
-    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(innerWidth, y); ctx.stroke();
-  }
+function removeDead(array, predicate) {
+  for (let i = array.length - 1; i >= 0; i -= 1) if (predicate(array[i])) array.splice(i, 1);
+}
 
-  const shadow = ctx.createRadialGradient(hole.x, hole.y, 2, hole.x, hole.y, hole.radius * 1.5);
-  shadow.addColorStop(0, '#000');
-  shadow.addColorStop(.63, '#020305');
-  shadow.addColorStop(.72, 'rgba(0,0,0,.9)');
-  shadow.addColorStop(1, 'rgba(0,0,0,0)');
-  ctx.fillStyle = shadow;
+function drawBackground() {
+  const gradient = ctx.createLinearGradient(0, 0, 0, innerHeight);
+  gradient.addColorStop(0, '#061022');
+  gradient.addColorStop(0.55, '#090d20');
+  gradient.addColorStop(1, '#02040a');
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, innerWidth, innerHeight);
+
+  for (const star of stars) {
+    ctx.globalAlpha = star.alpha;
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(star.x, star.y, star.size, star.size * 2.4);
+  }
+  ctx.globalAlpha = 1;
+
+  const planetY = innerHeight + 110;
+  const planet = ctx.createRadialGradient(innerWidth / 2, planetY - 80, 20, innerWidth / 2, planetY, innerWidth * 0.72);
+  planet.addColorStop(0, '#26a8d7');
+  planet.addColorStop(0.55, '#0d4f7f');
+  planet.addColorStop(1, '#03101d');
+  ctx.fillStyle = planet;
   ctx.beginPath();
-  ctx.arc(hole.x, hole.y, hole.radius * 1.5, 0, Math.PI * 2);
+  ctx.arc(innerWidth / 2, planetY, innerWidth * 0.72, Math.PI, Math.PI * 2);
   ctx.fill();
-  ctx.strokeStyle = 'rgba(110,214,255,.55)';
-  ctx.lineWidth = 3;
-  ctx.beginPath();
-  ctx.arc(hole.x, hole.y, hole.radius, 0, Math.PI * 2);
-  ctx.stroke();
 }
 
-function drawBalls() {
-  for (const ball of balls) {
-    if (ball.shrink < 0.03) continue;
+function drawShip() {
+  if (ship.invulnerable > 0 && Math.floor(ship.invulnerable * 12) % 2 === 0) return;
+  ctx.save();
+  ctx.translate(ship.x, ship.y);
+  ctx.rotate(input.x * 0.18);
+  ctx.shadowColor = '#52d8ff';
+  ctx.shadowBlur = 20;
+  ctx.fillStyle = '#dff8ff';
+  ctx.beginPath();
+  ctx.moveTo(0, -25);
+  ctx.lineTo(18, 20);
+  ctx.lineTo(7, 14);
+  ctx.lineTo(0, 22);
+  ctx.lineTo(-7, 14);
+  ctx.lineTo(-18, 20);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = '#53cfff';
+  ctx.beginPath();
+  ctx.moveTo(0, -12);
+  ctx.lineTo(7, 10);
+  ctx.lineTo(-7, 10);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = '#ff9b3f';
+  ctx.beginPath();
+  ctx.moveTo(-6, 20); ctx.lineTo(0, 36 + Math.random() * 8); ctx.lineTo(6, 20); ctx.fill();
+  ctx.restore();
+}
+
+function drawEnemies() {
+  for (const enemy of enemies) {
     ctx.save();
-    ctx.translate(ball.x, ball.y);
-    ctx.scale(ball.shrink, ball.shrink);
-    const gradient = ctx.createRadialGradient(-ball.radius * .35, -ball.radius * .4, 2, 0, 0, ball.radius);
-    gradient.addColorStop(0, '#fff');
-    gradient.addColorStop(.18, ball.color);
-    gradient.addColorStop(1, '#111827');
-    ctx.shadowColor = ball.color;
-    ctx.shadowBlur = 16;
-    ctx.fillStyle = gradient;
+    ctx.translate(enemy.x, enemy.y);
+    ctx.rotate(Math.sin(enemy.phase) * 0.12);
+    ctx.shadowColor = enemy.heavy ? '#b47cff' : '#ff5f87';
+    ctx.shadowBlur = enemy.heavy ? 24 : 15;
+    ctx.fillStyle = enemy.heavy ? '#8e5cff' : '#f23d70';
     ctx.beginPath();
-    ctx.arc(0, 0, ball.radius, 0, Math.PI * 2);
+    ctx.moveTo(0, enemy.r);
+    ctx.lineTo(enemy.r, -enemy.r * 0.7);
+    ctx.lineTo(enemy.r * 0.34, -enemy.r * 0.45);
+    ctx.lineTo(0, -enemy.r);
+    ctx.lineTo(-enemy.r * 0.34, -enemy.r * 0.45);
+    ctx.lineTo(-enemy.r, -enemy.r * 0.7);
+    ctx.closePath();
     ctx.fill();
+    ctx.fillStyle = '#ffd7e4';
+    ctx.fillRect(-enemy.r * 0.38, -3, enemy.r * 0.76, 5);
+    if (enemy.maxHp > 1) {
+      ctx.fillStyle = 'rgba(255,255,255,.25)';
+      ctx.fillRect(-enemy.r, enemy.r + 8, enemy.r * 2, 3);
+      ctx.fillStyle = '#b47cff';
+      ctx.fillRect(-enemy.r, enemy.r + 8, enemy.r * 2 * (enemy.hp / enemy.maxHp), 3);
+    }
     ctx.restore();
   }
+}
+
+function drawProjectiles() {
+  ctx.shadowBlur = 14;
+  ctx.shadowColor = '#ffe96d';
+  ctx.fillStyle = '#fff8a8';
+  for (const b of bullets) ctx.fillRect(b.x - 2, b.y - 9, 4, 18);
+  ctx.shadowColor = '#ff4e78';
+  ctx.fillStyle = '#ff668c';
+  for (const b of enemyBullets) {
+    ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.shadowBlur = 0;
+}
+
+function drawParticles() {
+  for (const p of particles) {
+    ctx.globalAlpha = Math.max(0, p.life / p.maxLife);
+    ctx.fillStyle = p.color;
+    ctx.fillRect(p.x, p.y, p.size, p.size);
+  }
+  ctx.globalAlpha = 1;
+}
+
+function draw() {
+  ctx.save();
+  if (shake > 0.2) ctx.translate((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake);
+  drawBackground();
+  drawProjectiles();
+  drawEnemies();
+  drawShip();
+  drawParticles();
+  ctx.restore();
 }
 
 function loop(now) {
@@ -217,23 +398,23 @@ function loop(now) {
   const dt = Math.min((now - lastTime) / 1000, 0.033);
   lastTime = now;
   update(dt);
-  drawBoard();
-  drawBalls();
+  draw();
   animationId = requestAnimationFrame(loop);
 }
 
-function finish(won) {
+function finish() {
   if (!running) return;
   running = false;
-  clearInterval(timerId);
   cancelAnimationFrame(animationId);
-  endLabel.textContent = won ? 'VITÓRIA' : 'TEMPO ESGOTADO';
-  endTitle.textContent = won ? `${60 - timeLeft}s` : `${remaining} restantes`;
-  endText.textContent = won
-    ? 'Todas as bolas caíram. A gravidade, por algum milagre administrativo, colaborou.'
-    : 'Algumas bolas resistiram heroicamente ao buraco. Tente movimentos menores e mais controlados.';
+  endLabel.textContent = 'NAVE DESTRUÍDA';
+  endTitle.textContent = `${score} pontos`;
+  endText.textContent = score >= 500
+    ? 'Defesa impecável. Os alienígenas abriram uma reclamação formal.'
+    : score >= 200
+      ? 'Boa resistência. O planeta sobreviveu mais do que a burocracia terrestre esperava.'
+      : 'A invasão venceu esta rodada. Pelo menos o iPhone saiu ileso.';
   gameOver.classList.remove('hidden');
-  message.textContent = won ? 'Todas as bolas capturadas' : 'Fim de jogo';
+  message.textContent = `Nível alcançado: ${level}`;
 }
 
 async function prepareAndStart() {
@@ -263,4 +444,4 @@ restartButton.addEventListener('click', resetGame);
 window.addEventListener('resize', resize);
 window.addEventListener('orientationchange', () => setTimeout(resize, 250));
 resize();
-drawBoard();
+draw();
