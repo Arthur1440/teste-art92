@@ -3,44 +3,37 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
-  <meta name="theme-color" content="#10120f">
-  <title>Caça-Luzes AR</title>
+  <meta name="theme-color" content="#10151d">
+  <title>Gravity Drop</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
   <main class="game-shell">
-    <video id="camera" autoplay muted playsinline></video>
     <canvas id="game"></canvas>
 
     <header class="hud">
-      <div><small>PONTOS</small><strong id="score">0</strong></div>
-      <div class="title">CAÇA-LUZES IA</div>
-      <div><small>TEMPO</small><strong id="time">30</strong></div>
+      <div><small>BOLAS</small><strong id="remaining">12</strong></div>
+      <div class="title">GRAVITY DROP</div>
+      <div><small>TEMPO</small><strong id="time">60</strong></div>
     </header>
 
     <section id="intro" class="panel">
-      <span class="eyebrow">CÂMERA + IA + SENSORES</span>
-      <h1>Encontre o ambiente.</h1>
-      <p>A IA procura objetos, chão e parede. As luzes aparecem sobre o que ela reconhecer e você mira inclinando o iPhone.</p>
-      <button id="startButton">Carregar IA e iniciar</button>
-      <p id="status" class="status">Abra diretamente no Safari. O primeiro carregamento pode demorar.</p>
+      <span class="eyebrow">JOGO COM SENSORES</span>
+      <h1>Leve todas ao buraco.</h1>
+      <p>Incline o iPhone para mover as bolas. A gravidade acompanha o aparelho e as colisões acontecem em tempo real.</p>
+      <button id="startButton">Ativar sensores e jogar</button>
+      <p id="status" class="status">Use o Safari e mantenha o aparelho na vertical.</p>
     </section>
 
     <section id="gameOver" class="panel hidden">
-      <span class="eyebrow">FIM DE JOGO</span>
-      <h2><span id="finalScore">0</span> pontos</h2>
-      <p id="resultText"></p>
+      <span class="eyebrow" id="endLabel">FIM DE JOGO</span>
+      <h2 id="endTitle">Resultado</h2>
+      <p id="endText"></p>
       <button id="restartButton">Jogar novamente</button>
     </section>
 
-    <div id="detected" class="detected">IA aguardando</div>
-    <div class="crosshair" id="crosshair" aria-hidden="true"><i></i></div>
-    <div class="hint" id="hint">Aponte para um cômodo bem iluminado</div>
+    <div id="message" class="message">Incline o iPhone para controlar a gravidade</div>
   </main>
-
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/deeplab@0.2.2/dist/deeplab.min.js"></script>
   <script src="script.js"></script>
 </body>
 </html>
