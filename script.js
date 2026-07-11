@@ -1,5 +1,4 @@
 const $ = (id) => document.getElementById(id);
-const video = $('camera');
 const canvas = $('game');
 const ctx = canvas.getContext('2d');
 const intro = $('intro');
@@ -7,40 +6,37 @@ const gameOver = $('gameOver');
 const startButton = $('startButton');
 const restartButton = $('restartButton');
 const statusText = $('status');
-const scoreText = $('score');
+const remainingText = $('remaining');
 const timeText = $('time');
-const finalScoreText = $('finalScore');
-const resultText = $('resultText');
-const crosshair = $('crosshair');
-const hint = $('hint');
-const detectedText = $('detected');
+const endLabel = $('endLabel');
+const endTitle = $('endTitle');
+const endText = $('endText');
+const message = $('message');
 
+const BALL_COUNT = 12;
+let balls = [];
+let hole = { x: 0, y: 0, radius: 42 };
+let gravity = { x: 0, y: 240 };
 let running = false;
-let score = 0;
-let timeLeft = 30;
-let timerId = null;
-let animationId = null;
-let target = null;
-let tiltX = 0;
-let tiltY = 0;
+let remaining = BALL_COUNT;
+let timeLeft = 60;
+let lastTime = 0;
+let animationId = 0;
+let timerId = 0;
 let baseBeta = null;
 let baseGamma = null;
-let cameraStream = null;
-let objectModel = null;
-let surfaceModel = null;
-let objectDetections = [];
-let surfaceAnchors = [];
-let lastFrame = 0;
-let detecting = false;
-let detectionTimer = null;
+let orientationBound = false;
 
 function resize() {
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const dpr = Math.min(devicePixelRatio || 1, 2);
   canvas.width = Math.round(innerWidth * dpr);
   canvas.height = Math.round(innerHeight * dpr);
   canvas.style.width = `${innerWidth}px`;
   canvas.style.height = `${innerHeight}px`;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  hole.x = innerWidth * 0.5;
+  hole.y = innerHeight * 0.57;
+  hole.radius = Math.max(34, Math.min(innerWidth, innerHeight) * 0.065);
 }
 
 function permissionPromise(EventType) {
@@ -48,309 +44,214 @@ function permissionPromise(EventType) {
   return EventType.requestPermission();
 }
 
-async function startCamera() {
-  if (!navigator.mediaDevices?.getUserMedia) throw new Error('Câmera não disponível neste navegador.');
-  cameraStream?.getTracks().forEach((track) => track.stop());
-  cameraStream = await navigator.mediaDevices.getUserMedia({
-    video: { facingMode: { ideal: 'environment' }, width: { ideal: 960 }, height: { ideal: 540 } },
-    audio: false
-  });
-  video.srcObject = cameraStream;
-  await video.play();
-}
-
-async function loadModels() {
-  statusText.textContent = 'Carregando reconhecimento de objetos...';
-  if (!window.cocoSsd) throw new Error('Modelo de objetos não carregou. Atualize a página.');
-  objectModel = await cocoSsd.load({ base: 'lite_mobilenet_v2' });
-
-  statusText.textContent = 'Carregando reconhecimento de chão e parede...';
-  try {
-    if (window.deeplab) {
-      surfaceModel = await deeplab.load({ base: 'ade20k', quantizationBytes: 2 });
-    }
-  } catch (error) {
-    console.warn('Segmentação indisponível; usando estimativa visual.', error);
-    surfaceModel = null;
-  }
-}
-
 function handleOrientation(event) {
   if (!running) return;
-  if (baseBeta === null && typeof event.beta === 'number') baseBeta = event.beta;
-  if (baseGamma === null && typeof event.gamma === 'number') baseGamma = event.gamma;
-  const beta = typeof event.beta === 'number' ? event.beta - (baseBeta || 0) : 0;
-  const gamma = typeof event.gamma === 'number' ? event.gamma - (baseGamma || 0) : 0;
-  tiltX = Math.max(-1, Math.min(1, gamma / 28));
-  tiltY = Math.max(-1, Math.min(1, beta / 28));
+  if (baseBeta === null && Number.isFinite(event.beta)) baseBeta = event.beta;
+  if (baseGamma === null && Number.isFinite(event.gamma)) baseGamma = event.gamma;
+
+  const beta = Number.isFinite(event.beta) ? event.beta - baseBeta : 0;
+  const gamma = Number.isFinite(event.gamma) ? event.gamma - baseGamma : 0;
+  gravity.x = Math.max(-650, Math.min(650, gamma * 24));
+  gravity.y = Math.max(-650, Math.min(650, beta * 24));
 }
 
-function videoToScreen(x, y, width, height) {
-  const vw = video.videoWidth || width;
-  const vh = video.videoHeight || height;
-  const scale = Math.max(innerWidth / vw, innerHeight / vh);
-  const drawnW = vw * scale;
-  const drawnH = vh * scale;
-  const offsetX = (innerWidth - drawnW) / 2;
-  const offsetY = (innerHeight - drawnH) / 2;
+function randomBall(index) {
+  const radius = 12 + Math.random() * 5;
+  let x;
+  let y;
+  do {
+    x = 35 + Math.random() * (innerWidth - 70);
+    y = 100 + Math.random() * (innerHeight - 180);
+  } while (Math.hypot(x - hole.x, y - hole.y) < hole.radius + 80);
+
   return {
-    x: offsetX + (x / width) * drawnW,
-    y: offsetY + (y / height) * drawnH
+    x,
+    y,
+    vx: 0,
+    vy: 0,
+    radius,
+    color: `hsl(${(index * 31 + 185) % 360} 82% 62%)`,
+    active: true,
+    shrink: 1
   };
 }
 
-function findSurfaceAnchors(segmentation) {
-  const anchors = [];
-  const map = segmentation?.segmentationMap;
-  const width = segmentation?.width;
-  const height = segmentation?.height;
-  const legend = segmentation?.legend || {};
-  if (!map || !width || !height) return anchors;
-
-  const wanted = [];
-  Object.entries(legend).forEach(([name, rgb]) => {
-    const normalized = name.toLowerCase();
-    if (normalized.includes('wall')) wanted.push({ type: 'parede', rgb });
-    if (normalized.includes('floor')) wanted.push({ type: 'chão', rgb });
-  });
-
-  const step = Math.max(4, Math.floor(Math.min(width, height) / 40));
-  for (let y = 0; y < height; y += step) {
-    for (let x = 0; x < width; x += step) {
-      const index = (y * width + x) * 4;
-      const match = wanted.find((item) => item.rgb[0] === map[index] && item.rgb[1] === map[index + 1] && item.rgb[2] === map[index + 2]);
-      if (!match) continue;
-      const p = videoToScreen(x, y, width, height);
-      if (p.x > 30 && p.x < innerWidth - 30 && p.y > 90 && p.y < innerHeight - 60) {
-        anchors.push({ x: p.x, y: p.y, type: match.type });
-      }
-    }
-  }
-  return anchors;
+function resetGame() {
+  clearInterval(timerId);
+  cancelAnimationFrame(animationId);
+  baseBeta = null;
+  baseGamma = null;
+  remaining = BALL_COUNT;
+  timeLeft = 60;
+  remainingText.textContent = String(remaining);
+  timeText.textContent = String(timeLeft);
+  balls = Array.from({ length: BALL_COUNT }, (_, index) => randomBall(index));
+  running = true;
+  lastTime = performance.now();
+  intro.classList.add('hidden');
+  gameOver.classList.add('hidden');
+  message.textContent = 'Incline o iPhone e conduza as bolas ao buraco';
+  timerId = setInterval(() => {
+    timeLeft -= 1;
+    timeText.textContent = String(Math.max(0, timeLeft));
+    if (timeLeft <= 0) finish(false);
+  }, 1000);
+  animationId = requestAnimationFrame(loop);
 }
 
-function estimatedSurfaces() {
-  return [
-    { x: innerWidth * 0.25, y: innerHeight * 0.36, type: 'parede estimada' },
-    { x: innerWidth * 0.72, y: innerHeight * 0.42, type: 'parede estimada' },
-    { x: innerWidth * 0.32, y: innerHeight * 0.76, type: 'chão estimado' },
-    { x: innerWidth * 0.68, y: innerHeight * 0.82, type: 'chão estimado' }
-  ];
+function resolveBallCollision(a, b) {
+  if (!a.active || !b.active) return;
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const distance = Math.hypot(dx, dy) || 0.001;
+  const minimum = a.radius + b.radius;
+  if (distance >= minimum) return;
+
+  const nx = dx / distance;
+  const ny = dy / distance;
+  const overlap = minimum - distance;
+  a.x -= nx * overlap * 0.5;
+  a.y -= ny * overlap * 0.5;
+  b.x += nx * overlap * 0.5;
+  b.y += ny * overlap * 0.5;
+
+  const relative = (b.vx - a.vx) * nx + (b.vy - a.vy) * ny;
+  if (relative > 0) return;
+  const impulse = -(1.72) * relative / 2;
+  a.vx -= impulse * nx;
+  a.vy -= impulse * ny;
+  b.vx += impulse * nx;
+  b.vy += impulse * ny;
 }
 
-async function runDetection() {
-  if (!running || detecting || video.readyState < 2 || !objectModel) return;
-  detecting = true;
-  try {
-    const predictions = await objectModel.detect(video, 8, 0.5);
-    objectDetections = predictions.map((prediction) => {
-      const [x, y, w, h] = prediction.bbox;
-      const topLeft = videoToScreen(x, y, video.videoWidth, video.videoHeight);
-      const bottomRight = videoToScreen(x + w, y + h, video.videoWidth, video.videoHeight);
-      return {
-        label: prediction.class,
-        score: prediction.score,
-        x: topLeft.x,
-        y: topLeft.y,
-        w: bottomRight.x - topLeft.x,
-        h: bottomRight.y - topLeft.y
-      };
-    });
-
-    if (surfaceModel) {
-      try {
-        const segmentation = await surfaceModel.segment(video);
-        const anchors = findSurfaceAnchors(segmentation);
-        surfaceAnchors = anchors.length ? anchors : estimatedSurfaces();
-      } catch (error) {
-        surfaceAnchors = estimatedSurfaces();
-      }
-    } else {
-      surfaceAnchors = estimatedSurfaces();
+function update(dt) {
+  const damping = Math.pow(0.992, dt * 60);
+  for (const ball of balls) {
+    if (!ball.active) {
+      ball.shrink *= Math.pow(0.04, dt);
+      continue;
     }
 
-    const names = [...new Set(objectDetections.map((item) => item.label))].slice(0, 3);
-    const hasWall = surfaceAnchors.some((item) => item.type.includes('parede'));
-    const hasFloor = surfaceAnchors.some((item) => item.type.includes('chão'));
-    const parts = [];
-    if (hasWall) parts.push('parede');
-    if (hasFloor) parts.push('chão');
-    parts.push(...names);
-    detectedText.textContent = parts.length ? `Detectado: ${parts.join(' • ')}` : 'Procure objetos, chão ou parede';
-  } catch (error) {
-    console.warn(error);
-    detectedText.textContent = 'IA ajustando a leitura do ambiente...';
-  } finally {
-    detecting = false;
+    ball.vx = (ball.vx + gravity.x * dt) * damping;
+    ball.vy = (ball.vy + gravity.y * dt) * damping;
+    const speed = Math.hypot(ball.vx, ball.vy);
+    if (speed > 900) {
+      ball.vx *= 900 / speed;
+      ball.vy *= 900 / speed;
+    }
+    ball.x += ball.vx * dt;
+    ball.y += ball.vy * dt;
+
+    if (ball.x - ball.radius < 0) { ball.x = ball.radius; ball.vx *= -0.72; }
+    if (ball.x + ball.radius > innerWidth) { ball.x = innerWidth - ball.radius; ball.vx *= -0.72; }
+    if (ball.y - ball.radius < 72) { ball.y = 72 + ball.radius; ball.vy *= -0.72; }
+    if (ball.y + ball.radius > innerHeight) { ball.y = innerHeight - ball.radius; ball.vy *= -0.72; }
+
+    const distanceToHole = Math.hypot(ball.x - hole.x, ball.y - hole.y);
+    if (distanceToHole < hole.radius - ball.radius * 0.15) {
+      ball.active = false;
+      ball.vx = 0;
+      ball.vy = 0;
+      remaining -= 1;
+      remainingText.textContent = String(remaining);
+      if (navigator.vibrate) navigator.vibrate(25);
+      if (remaining === 0) finish(true);
+    }
+  }
+
+  for (let i = 0; i < balls.length; i += 1) {
+    for (let j = i + 1; j < balls.length; j += 1) resolveBallCollision(balls[i], balls[j]);
   }
 }
 
-function chooseAnchor() {
-  const objectAnchors = objectDetections
-    .filter((item) => item.w > 35 && item.h > 35)
-    .map((item) => ({
-      x: item.x + item.w * (0.25 + Math.random() * 0.5),
-      y: item.y + item.h * (0.25 + Math.random() * 0.5),
-      type: item.label
-    }));
-  const candidates = [...objectAnchors, ...surfaceAnchors];
-  if (!candidates.length) return { x: innerWidth / 2, y: innerHeight * 0.55, type: 'ambiente' };
-  return candidates[Math.floor(Math.random() * candidates.length)];
-}
+function drawBoard() {
+  ctx.clearRect(0, 0, innerWidth, innerHeight);
+  const grid = 28;
+  ctx.strokeStyle = 'rgba(255,255,255,.035)';
+  ctx.lineWidth = 1;
+  for (let x = 0; x < innerWidth; x += grid) {
+    ctx.beginPath(); ctx.moveTo(x, 70); ctx.lineTo(x, innerHeight); ctx.stroke();
+  }
+  for (let y = 70; y < innerHeight; y += grid) {
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(innerWidth, y); ctx.stroke();
+  }
 
-function spawnTarget() {
-  const anchor = chooseAnchor();
-  target = {
-    x: Math.max(50, Math.min(innerWidth - 50, anchor.x)),
-    y: Math.max(105, Math.min(innerHeight - 65, anchor.y)),
-    radius: 24 + Math.random() * 12,
-    pulse: 0,
-    hue: 72 + Math.random() * 55,
-    label: anchor.type
-  };
-  hint.textContent = `Alvo em: ${target.label}`;
-}
-
-function crosshairPosition() {
-  const x = innerWidth / 2 + tiltX * innerWidth * 0.36;
-  const y = innerHeight * 0.58 + tiltY * innerHeight * 0.31;
-  return {
-    x: Math.max(45, Math.min(innerWidth - 45, x)),
-    y: Math.max(90, Math.min(innerHeight - 55, y))
-  };
-}
-
-function drawDetections() {
-  ctx.save();
-  ctx.font = '700 12px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif';
-  objectDetections.forEach((item) => {
-    ctx.strokeStyle = 'rgba(183,255,106,.8)';
-    ctx.fillStyle = 'rgba(183,255,106,.08)';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(item.x, item.y, item.w, item.h);
-    ctx.fillRect(item.x, item.y, item.w, item.h);
-    ctx.fillStyle = '#e7ffd0';
-    ctx.fillText(`${item.label} ${Math.round(item.score * 100)}%`, item.x + 5, Math.max(88, item.y - 6));
-  });
-  ctx.restore();
-}
-
-function drawTarget(now) {
-  if (!target) return;
-  target.pulse = (Math.sin(now / 180) + 1) / 2;
-  const glow = target.radius + target.pulse * 12;
-  const gradient = ctx.createRadialGradient(target.x, target.y, 2, target.x, target.y, glow * 1.7);
-  gradient.addColorStop(0, `hsla(${target.hue},100%,82%,1)`);
-  gradient.addColorStop(.28, `hsla(${target.hue},100%,62%,.95)`);
-  gradient.addColorStop(1, `hsla(${target.hue},100%,55%,0)`);
-  ctx.fillStyle = gradient;
+  const shadow = ctx.createRadialGradient(hole.x, hole.y, 2, hole.x, hole.y, hole.radius * 1.5);
+  shadow.addColorStop(0, '#000');
+  shadow.addColorStop(.63, '#020305');
+  shadow.addColorStop(.72, 'rgba(0,0,0,.9)');
+  shadow.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = shadow;
   ctx.beginPath();
-  ctx.arc(target.x, target.y, glow * 1.7, 0, Math.PI * 2);
+  ctx.arc(hole.x, hole.y, hole.radius * 1.5, 0, Math.PI * 2);
   ctx.fill();
-  ctx.strokeStyle = `hsla(${target.hue},100%,82%,.95)`;
+  ctx.strokeStyle = 'rgba(110,214,255,.55)';
   ctx.lineWidth = 3;
   ctx.beginPath();
-  ctx.arc(target.x, target.y, target.radius + target.pulse * 5, 0, Math.PI * 2);
+  ctx.arc(hole.x, hole.y, hole.radius, 0, Math.PI * 2);
   ctx.stroke();
-  ctx.fillStyle = 'rgba(255,255,255,.96)';
-  ctx.beginPath();
-  ctx.arc(target.x, target.y, 5, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.font = '700 12px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif';
-  ctx.textAlign = 'center';
-  ctx.fillText(target.label, target.x, target.y + target.radius + 24);
 }
 
-function checkHit() {
-  if (!target || !running) return;
-  const aim = crosshairPosition();
-  crosshair.style.left = `${aim.x}px`;
-  crosshair.style.top = `${aim.y}px`;
-  if (Math.hypot(aim.x - target.x, aim.y - target.y) < target.radius + 26) {
-    score += target.label.includes('parede') || target.label.includes('chão') ? 2 : 1;
-    scoreText.textContent = String(score);
-    crosshair.classList.remove('hit');
-    void crosshair.offsetWidth;
-    crosshair.classList.add('hit');
-    if (navigator.vibrate) navigator.vibrate(35);
-    spawnTarget();
+function drawBalls() {
+  for (const ball of balls) {
+    if (ball.shrink < 0.03) continue;
+    ctx.save();
+    ctx.translate(ball.x, ball.y);
+    ctx.scale(ball.shrink, ball.shrink);
+    const gradient = ctx.createRadialGradient(-ball.radius * .35, -ball.radius * .4, 2, 0, 0, ball.radius);
+    gradient.addColorStop(0, '#fff');
+    gradient.addColorStop(.18, ball.color);
+    gradient.addColorStop(1, '#111827');
+    ctx.shadowColor = ball.color;
+    ctx.shadowBlur = 16;
+    ctx.fillStyle = gradient;
+    ctx.beginPath();
+    ctx.arc(0, 0, ball.radius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
   }
 }
 
 function loop(now) {
   if (!running) return;
-  if (now - lastFrame > 16) {
-    ctx.clearRect(0, 0, innerWidth, innerHeight);
-    drawDetections();
-    drawTarget(now);
-    checkHit();
-    lastFrame = now;
-  }
+  const dt = Math.min((now - lastTime) / 1000, 0.033);
+  lastTime = now;
+  update(dt);
+  drawBoard();
+  drawBalls();
   animationId = requestAnimationFrame(loop);
 }
 
-function finishGame() {
+function finish(won) {
+  if (!running) return;
   running = false;
   clearInterval(timerId);
-  clearInterval(detectionTimer);
   cancelAnimationFrame(animationId);
-  finalScoreText.textContent = String(score);
-  resultText.textContent = score >= 18
-    ? 'Você venceu a sala. Móveis e paredes estão reconsiderando suas escolhas.'
-    : score >= 10
-      ? 'Boa leitura do ambiente. O iPhone trabalhou, fato historicamente raro.'
-      : 'A IA encontrou o cômodo. Você encontrou algumas luzes. Cooperação aceitável.';
+  endLabel.textContent = won ? 'VITÓRIA' : 'TEMPO ESGOTADO';
+  endTitle.textContent = won ? `${60 - timeLeft}s` : `${remaining} restantes`;
+  endText.textContent = won
+    ? 'Todas as bolas caíram. A gravidade, por algum milagre administrativo, colaborou.'
+    : 'Algumas bolas resistiram heroicamente ao buraco. Tente movimentos menores e mais controlados.';
   gameOver.classList.remove('hidden');
-  hint.textContent = 'Jogo encerrado';
-}
-
-function beginGame() {
-  score = 0;
-  timeLeft = 30;
-  baseBeta = null;
-  baseGamma = null;
-  scoreText.textContent = '0';
-  timeText.textContent = '30';
-  intro.classList.add('hidden');
-  gameOver.classList.add('hidden');
-  surfaceAnchors = estimatedSurfaces();
-  running = true;
-  spawnTarget();
-  lastFrame = performance.now();
-  animationId = requestAnimationFrame(loop);
-  runDetection();
-  detectionTimer = setInterval(runDetection, 1800);
-  timerId = setInterval(() => {
-    timeLeft -= 1;
-    timeText.textContent = String(timeLeft);
-    if (timeLeft <= 0) finishGame();
-  }, 1000);
+  message.textContent = won ? 'Todas as bolas capturadas' : 'Fim de jogo';
 }
 
 async function prepareAndStart() {
   startButton.disabled = true;
-  statusText.textContent = 'Solicitando câmera e sensores...';
-  if (!window.isSecureContext) {
-    statusText.textContent = 'Abra por HTTPS.';
-    startButton.disabled = false;
-    return;
-  }
-
+  statusText.textContent = 'Solicitando acesso aos sensores...';
   try {
-    const orientationRequest = permissionPromise(window.DeviceOrientationEvent);
-    const motionRequest = permissionPromise(window.DeviceMotionEvent);
-    const cameraRequest = startCamera();
     const [orientationPermission, motionPermission] = await Promise.all([
-      orientationRequest,
-      motionRequest,
-      cameraRequest.then(() => 'camera-ok')
+      permissionPromise(window.DeviceOrientationEvent),
+      permissionPromise(window.DeviceMotionEvent)
     ]);
     if (orientationPermission !== 'granted' || motionPermission !== 'granted') {
-      throw new Error(`Sensores negados: ${orientationPermission}/${motionPermission}`);
+      throw new Error(`Permissões: ${orientationPermission}/${motionPermission}`);
     }
-    window.addEventListener('deviceorientation', handleOrientation, true);
-    await loadModels();
-    beginGame();
+    if (!orientationBound) {
+      window.addEventListener('deviceorientation', handleOrientation, true);
+      orientationBound = true;
+    }
+    resetGame();
   } catch (error) {
     statusText.textContent = `Não foi possível iniciar: ${error.message || error}`;
     startButton.disabled = false;
@@ -358,7 +259,8 @@ async function prepareAndStart() {
 }
 
 startButton.addEventListener('click', prepareAndStart);
-restartButton.addEventListener('click', beginGame);
+restartButton.addEventListener('click', resetGame);
 window.addEventListener('resize', resize);
 window.addEventListener('orientationchange', () => setTimeout(resize, 250));
 resize();
+drawBoard();
