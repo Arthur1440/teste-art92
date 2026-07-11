@@ -1,76 +1,40 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="pt-BR">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#0b1020">
-  <title>Painel de Sensores do iPhone</title>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+  <meta name="theme-color" content="#10120f">
+  <title>Caça-Luzes AR</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <main class="app">
-    <section class="hero">
-      <span class="badge">iPhone Sensor Lab</span>
-      <h1>Painel de sensores</h1>
-      <p>Teste orientação, giroscópio, acelerômetro e bússola diretamente no Safari.</p>
-      <button id="startButton" class="primary">Ativar sensores</button>
-      <p id="status" class="status">Aguardando autorização.</p>
+  <main class="game-shell">
+    <video id="camera" autoplay muted playsinline></video>
+    <canvas id="game"></canvas>
+
+    <header class="hud">
+      <div><small>PONTOS</small><strong id="score">0</strong></div>
+      <div class="title">CAÇA-LUZES</div>
+      <div><small>TEMPO</small><strong id="time">30</strong></div>
+    </header>
+
+    <section id="intro" class="panel">
+      <span class="eyebrow">MINIJOGO AR</span>
+      <h1>Incline. Mire. Capture.</h1>
+      <p>Use a câmera como cenário e incline o iPhone para levar a mira até as luzes.</p>
+      <button id="startButton">Iniciar jogo</button>
+      <p id="status" class="status">Abra diretamente no Safari.</p>
     </section>
 
-    <section class="notice" id="environmentNotice">
-      <strong>Verificação do ambiente</strong>
-      <span id="environmentText">Analisando...</span>
+    <section id="gameOver" class="panel hidden">
+      <span class="eyebrow">FIM DE JOGO</span>
+      <h2><span id="finalScore">0</span> pontos</h2>
+      <p id="resultText">Nada mal para um humano girando um retângulo de vidro.</p>
+      <button id="restartButton">Jogar novamente</button>
     </section>
 
-    <section class="grid">
-      <article class="card visual-card">
-        <div class="card-head">
-          <h2>Inclinação</h2>
-          <span>visual</span>
-        </div>
-        <div class="stage">
-          <div id="phone" class="phone">
-            <div class="notch"></div>
-            <div class="screen-dot"></div>
-          </div>
-        </div>
-      </article>
-
-      <article class="card">
-        <div class="card-head"><h2>Orientação</h2><span>graus</span></div>
-        <div class="metric"><span>Alpha</span><strong id="alpha">--</strong></div>
-        <div class="metric"><span>Beta</span><strong id="beta">--</strong></div>
-        <div class="metric"><span>Gamma</span><strong id="gamma">--</strong></div>
-      </article>
-
-      <article class="card">
-        <div class="card-head"><h2>Aceleração</h2><span>m/s²</span></div>
-        <div class="metric"><span>Eixo X</span><strong id="accX">--</strong></div>
-        <div class="metric"><span>Eixo Y</span><strong id="accY">--</strong></div>
-        <div class="metric"><span>Eixo Z</span><strong id="accZ">--</strong></div>
-      </article>
-
-      <article class="card">
-        <div class="card-head"><h2>Rotação</h2><span>°/s</span></div>
-        <div class="metric"><span>Alpha</span><strong id="rotAlpha">--</strong></div>
-        <div class="metric"><span>Beta</span><strong id="rotBeta">--</strong></div>
-        <div class="metric"><span>Gamma</span><strong id="rotGamma">--</strong></div>
-      </article>
-
-      <article class="card compass-card">
-        <div class="card-head"><h2>Bússola</h2><span>direção</span></div>
-        <div class="compass">
-          <span class="north">N</span>
-          <div id="needle" class="needle"></div>
-        </div>
-        <div class="metric center"><span>Rumo</span><strong id="heading">--</strong></div>
-      </article>
-    </section>
-
-    <section class="tips">
-      <h2>Para funcionar no iPhone</h2>
-      <p>Abra esta página diretamente no Safari, toque em “Ativar sensores” e aceite a permissão. Evite navegador interno de aplicativos e páginas incorporadas.</p>
-    </section>
+    <div class="crosshair" id="crosshair" aria-hidden="true"><i></i></div>
+    <div class="hint" id="hint">Incline o aparelho para mover a mira</div>
   </main>
   <script src="script.js"></script>
 </body>
